@@ -98,6 +98,28 @@ function createPNG(size, isMaskable = false) {
   ]);
 }
 
+// Wrap PNG in a standard Microsoft ICO format container
+function createICO(pngBuf, size = 32) {
+  // ICO Header: 6 bytes
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // 1 for ICO
+  header.writeUInt16LE(1, 4); // 1 image
+
+  // Icon Directory Entry: 16 bytes
+  const entry = Buffer.alloc(16);
+  entry.writeUInt8(size >= 256 ? 0 : size, 0); // width
+  entry.writeUInt8(size >= 256 ? 0 : size, 1); // height
+  entry.writeUInt8(0, 2); // color count (0 for 256 or true color)
+  entry.writeUInt8(0, 3); // reserved
+  entry.writeUInt16LE(1, 4); // color planes
+  entry.writeUInt16LE(32, 6); // bits per pixel
+  entry.writeUInt32LE(pngBuf.length, 8); // image size in bytes
+  entry.writeUInt32LE(6 + 16, 12); // image offset from start of file
+
+  return Buffer.concat([header, entry, pngBuf]);
+}
+
 const publicDir = path.resolve('public');
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true });
@@ -112,11 +134,13 @@ const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512
   <circle cx="369" cy="143" r="16" fill="#38bdf8"/>
 </svg>`;
 
+const png32 = createPNG(32);
 fs.writeFileSync(path.join(publicDir, 'icon.svg'), svgContent);
-fs.writeFileSync(path.join(publicDir, 'favicon.ico'), createPNG(32));
+fs.writeFileSync(path.join(publicDir, 'favicon-32x32.png'), png32);
+fs.writeFileSync(path.join(publicDir, 'favicon.ico'), createICO(png32, 32));
 fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.png'), createPNG(180));
 fs.writeFileSync(path.join(publicDir, 'pwa-192x192.png'), createPNG(192));
 fs.writeFileSync(path.join(publicDir, 'pwa-512x512.png'), createPNG(512));
 fs.writeFileSync(path.join(publicDir, 'pwa-maskable-512x512.png'), createPNG(512, true));
 
-console.log('PWA icons created successfully');
+console.log('PWA icons created successfully with valid ICO format');

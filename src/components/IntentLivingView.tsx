@@ -441,10 +441,10 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
         )}
 
         {/* In MOVING:
-            If NO active move in flight: User can declare reality is achieved: "THIS IS REAL →"
-            If active move IS in flight: The primary action on screen is DONE (above). No conflicting duplicate CTA here!
+            Primary action when move is in flight is DONE.
+            The user can also declare reality is achieved: "THIS IS REAL →"
         */}
-        {intent.currentState === 'MOVING' && !hasActiveMove && (
+        {intent.currentState === 'MOVING' && (
           <button
             id="mark-real-btn"
             onClick={handleMarkReal}
@@ -455,14 +455,14 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
           </button>
         )}
 
-        {/* In REAL: "CLOSE INTENT" */}
+        {/* In REAL: "CLOSE" */}
         {intent.currentState === 'REAL' && (
           <button
             id="close-intent-primary-btn"
             onClick={handleCloseIntent}
             className="group flex items-center justify-center gap-3 w-full h-14 rounded-full bg-white text-black font-semibold text-sm tracking-widest uppercase hover:bg-white/95 active:scale-[0.98] transition shadow-[0_0_25px_rgba(255,255,255,0.2)] cursor-pointer"
           >
-            <span>CLOSE INTENT</span>
+            <span>CLOSE</span>
             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
           </button>
         )}

@@ -9,7 +9,7 @@ export interface ShareResult {
 
 export async function shareIntent(intent: Intent): Promise<ShareResult> {
   const canonical = getCanonicalIntention(intent.originalIntent);
-  const shareText = `BOUNDLESS: ${canonical}\nState: ${intent.currentState}`;
+  const shareText = `BOUNDLESS — ${canonical}`;
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}?intent=${intent.id}` : '';
 
   // Try native Web Share API first

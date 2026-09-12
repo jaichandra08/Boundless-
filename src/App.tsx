@@ -58,6 +58,21 @@ export default function App() {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Navigate helper that pushes browser history
+  const navigateTo = (nextView: AppView, nextIntentId: string | null = null) => {
+    setView(nextView);
+    setActiveIntentId(nextIntentId);
+
+    if (typeof window !== 'undefined') {
+      const search = nextIntentId ? `?intent=${encodeURIComponent(nextIntentId)}` : window.location.pathname;
+      window.history.pushState(
+        { view: nextView, activeIntentId: nextIntentId },
+        '',
+        search
+      );
+    }
+  };
+
   // Synchronize active intent ID and view to storage on change
   useEffect(() => {
     setSavedActiveIntentId(activeIntentId);
@@ -66,6 +81,42 @@ export default function App() {
   useEffect(() => {
     setSavedView(view);
   }, [view]);
+
+  // Initial history state replacement
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const search = activeIntentId ? `?intent=${encodeURIComponent(activeIntentId)}` : window.location.pathname;
+      window.history.replaceState(
+        { view, activeIntentId },
+        '',
+        search
+      );
+    }
+  }, []);
+
+  // Handle browser back / forward navigation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state && event.state.view) {
+        setView(event.state.view);
+        setActiveIntentId(event.state.activeIntentId || null);
+      } else {
+        const existing = loadIntents();
+        if (existing.length > 0) {
+          setView('HOME');
+          setActiveIntentId(null);
+        } else {
+          setView('ARRIVAL');
+          setActiveIntentId(null);
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Handle URL query param for shared intention
   useEffect(() => {
@@ -91,7 +142,7 @@ export default function App() {
 
   const handleStartFromArrival = () => {
     markVisited();
-    setView('CREATE');
+    navigateTo('CREATE', null);
   };
 
   const handleCreateIntent = (intentText: string) => {
@@ -105,8 +156,7 @@ export default function App() {
         Date.now() - new Date(i.createdAt).getTime() < 3000
     );
     if (existingRecent) {
-      setActiveIntentId(existingRecent.id);
-      setView('INTENT');
+      navigateTo('INTENT', existingRecent.id);
       return;
     }
 
@@ -141,9 +191,8 @@ export default function App() {
       const deduped = prev.filter((i) => i.id !== newId);
       return [newIntent, ...deduped];
     });
-    setActiveIntentId(newId);
     markVisited();
-    setView('INTENT');
+    navigateTo('INTENT', newId);
   };
 
   const handleUpdateIntent = (updated: Intent) => {
@@ -165,7 +214,7 @@ export default function App() {
       {view === 'ARRIVAL' && (
         <ArrivalView
           onStart={handleStartFromArrival}
-          onViewHome={() => setView('HOME')}
+          onViewHome={() => navigateTo('HOME', null)}
           hasExistingIntents={intents.length > 0}
         />
       )}
@@ -174,9 +223,9 @@ export default function App() {
         <CreateView
           onBack={() => {
             if (intents.length > 0) {
-              setView('HOME');
+              navigateTo('HOME', null);
             } else {
-              setView('ARRIVAL');
+              navigateTo('ARRIVAL', null);
             }
           }}
           onSubmit={handleCreateIntent}
@@ -189,8 +238,7 @@ export default function App() {
             intent={activeIntent}
             onUpdateIntent={handleUpdateIntent}
             onCloseView={() => {
-              setActiveIntentId(null);
-              setView('HOME');
+              navigateTo('HOME', null);
             }}
             onToast={showToast}
           />
@@ -198,11 +246,10 @@ export default function App() {
           <HomeView
             intents={intents}
             onSelectIntent={(intent) => {
-              setActiveIntentId(intent.id);
-              setView('INTENT');
+              navigateTo('INTENT', intent.id);
             }}
-            onCreateNew={() => setView('CREATE')}
-            onShowArrival={() => setView('ARRIVAL')}
+            onCreateNew={() => navigateTo('CREATE', null)}
+            onShowArrival={() => navigateTo('ARRIVAL', null)}
           />
         )
       )}
@@ -211,11 +258,10 @@ export default function App() {
         <HomeView
           intents={intents}
           onSelectIntent={(intent) => {
-            setActiveIntentId(intent.id);
-            setView('INTENT');
+            navigateTo('INTENT', intent.id);
           }}
-          onCreateNew={() => setView('CREATE')}
-          onShowArrival={() => setView('ARRIVAL')}
+          onCreateNew={() => navigateTo('CREATE', null)}
+          onShowArrival={() => navigateTo('ARRIVAL', null)}
         />
       )}
     </main>

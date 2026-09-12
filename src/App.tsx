@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Intent, AppView } from './types';
 import {
   loadIntents,
@@ -11,6 +11,7 @@ import {
   setSavedView,
 } from './utils/storage';
 import { getCanonicalIntention } from './utils/text';
+import { generateId } from './utils/id';
 import { ArrivalView } from './components/ArrivalView';
 import { CreateView } from './components/CreateView';
 import { IntentLivingView } from './components/IntentLivingView';
@@ -58,17 +59,16 @@ export default function App() {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Navigate helper that pushes browser history
+  // Navigate helper that pushes browser history cleanly without exposing internal IDs
   const navigateTo = (nextView: AppView, nextIntentId: string | null = null) => {
     setView(nextView);
     setActiveIntentId(nextIntentId);
 
     if (typeof window !== 'undefined') {
-      const search = nextIntentId ? `?intent=${encodeURIComponent(nextIntentId)}` : window.location.pathname;
       window.history.pushState(
         { view: nextView, activeIntentId: nextIntentId },
         '',
-        search
+        window.location.pathname
       );
     }
   };
@@ -85,11 +85,10 @@ export default function App() {
   // Initial history state replacement
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const search = activeIntentId ? `?intent=${encodeURIComponent(activeIntentId)}` : window.location.pathname;
       window.history.replaceState(
         { view, activeIntentId },
         '',
-        search
+        window.location.pathname
       );
     }
   }, []);
@@ -140,6 +139,9 @@ export default function App() {
     }, 3200);
   };
 
+  const isCreatingRef = useRef(false);
+  const lastCreationRef = useRef<{ text: string; time: number } | null>(null);
+
   const handleStartFromArrival = () => {
     markVisited();
     navigateTo('CREATE', null);
@@ -149,22 +151,24 @@ export default function App() {
     const canonical = getCanonicalIntention(intentText);
     if (!canonical) return;
 
-    // Defense against race condition: check if identical intent created in last 3s
-    const existingRecent = intents.find(
-      (i) =>
-        i.originalIntent.toLowerCase() === canonical.toLowerCase() &&
-        Date.now() - new Date(i.createdAt).getTime() < 3000
-    );
-    if (existingRecent) {
-      navigateTo('INTENT', existingRecent.id);
+    // Guard against synchronous double-invocations from the same user gesture
+    if (isCreatingRef.current) return;
+
+    // Guard against accidental rapid event duplication (< 600ms) for identical text from the same interaction
+    const nowMs = Date.now();
+    if (
+      lastCreationRef.current &&
+      lastCreationRef.current.text === canonical &&
+      nowMs - lastCreationRef.current.time < 600
+    ) {
       return;
     }
 
+    isCreatingRef.current = true;
+    lastCreationRef.current = { text: canonical, time: nowMs };
+
     const now = new Date().toISOString();
-    const newId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `intent_${Date.now()}`;
+    const newId = generateId('intent');
 
     const newIntent: Intent = {
       id: newId,
@@ -173,10 +177,8 @@ export default function App() {
       nextMove: '',
       history: [
         {
-          id:
-            typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `hist_${Date.now()}`,
+          id: generateId('hist'),
+          intentId: newId,
           text: 'Intention articulated',
           completedAt: now,
           type: 'creation',
@@ -193,6 +195,10 @@ export default function App() {
     });
     markVisited();
     navigateTo('INTENT', newId);
+
+    setTimeout(() => {
+      isCreatingRef.current = false;
+    }, 120);
   };
 
   const handleUpdateIntent = (updated: Intent) => {

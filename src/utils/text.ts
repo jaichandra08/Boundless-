@@ -17,7 +17,7 @@ export function sanitizeIntentionText(raw: string): string {
   if (!raw) return '';
   let trimmed = raw.trim();
 
-  // If the string starts and ends with matching outer quotes, strip just the outer pair
+  // If the string starts and ends with matching outer quotes, safely strip nested accidental outer pairs
   const quotePairs: [string, string][] = [
     ['"', '"'],
     ['“', '”'],
@@ -26,10 +26,19 @@ export function sanitizeIntentionText(raw: string): string {
     ["'", "'"],
   ];
 
-  for (const [open, close] of quotePairs) {
-    if (trimmed.length >= 2 && trimmed.startsWith(open) && trimmed.endsWith(close)) {
-      trimmed = trimmed.slice(open.length, trimmed.length - close.length).trim();
-      break;
+  let changed = true;
+  while (changed && trimmed.length >= 2) {
+    changed = false;
+    for (const [open, close] of quotePairs) {
+      if (
+        trimmed.startsWith(open) &&
+        trimmed.endsWith(close) &&
+        trimmed.length >= open.length + close.length
+      ) {
+        trimmed = trimmed.slice(open.length, trimmed.length - close.length).trim();
+        changed = true;
+        break;
+      }
     }
   }
 

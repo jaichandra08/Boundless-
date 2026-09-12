@@ -1,14 +1,69 @@
-import { Intent, AppView } from '../types';
+import { Intent, IntentHistoryItem, IntentState, AppView } from '../types';
 import { sanitizeIntentionText } from './text';
+import { generateId } from './id';
 
 const STORAGE_KEY = 'boundless_intents_v1';
 const VISITED_KEY = 'boundless_has_visited_v1';
 const ACTIVE_INTENT_KEY = 'boundless_active_intent_id_v1';
 const ACTIVE_VIEW_KEY = 'boundless_active_view_v1';
 
+const VALID_STATES: IntentState[] = ['INTENDED', 'MOVING', 'REAL', 'CLOSED'];
+
+/**
+ * Defensively normalizes an intent record from unknown data.
+ * Returns null if the record is fundamentally corrupted or lacks content.
+ */
+export function normalizeIntent(raw: unknown): Intent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+
+  if (typeof obj.id !== 'string' || !obj.id.trim()) return null;
+
+  const rawText = typeof obj.originalIntent === 'string' ? obj.originalIntent : '';
+  const sanitizedText = sanitizeIntentionText(rawText);
+  if (!sanitizedText) return null;
+
+  const currentState: IntentState = VALID_STATES.includes(obj.currentState as IntentState)
+    ? (obj.currentState as IntentState)
+    : 'INTENDED';
+
+  const nextMove = typeof obj.nextMove === 'string' ? obj.nextMove.trim() : '';
+
+  let history: IntentHistoryItem[] = [];
+  if (Array.isArray(obj.history)) {
+    history = obj.history
+      .filter((h): h is Record<string, unknown> => Boolean(h && typeof h === 'object' && typeof h.text === 'string'))
+      .map((h) => ({
+        id: typeof h.id === 'string' && h.id ? h.id : generateId('hist'),
+        intentId: String(obj.id).trim(),
+        text: String(h.text),
+        completedAt: typeof h.completedAt === 'string' ? h.completedAt : new Date().toISOString(),
+        type: (['creation', 'state_change', 'move'].includes(h.type as string)
+          ? h.type
+          : 'move') as 'creation' | 'state_change' | 'move',
+      }));
+  }
+
+  const now = new Date().toISOString();
+  const createdAt = typeof obj.createdAt === 'string' ? obj.createdAt : now;
+  const updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : createdAt;
+
+  return {
+    id: obj.id.trim(),
+    originalIntent: sanitizedText,
+    currentState,
+    nextMove,
+    history,
+    createdAt,
+    updatedAt,
+    realAt: typeof obj.realAt === 'string' ? obj.realAt : undefined,
+    closedAt: typeof obj.closedAt === 'string' ? obj.closedAt : undefined,
+  };
+}
+
 /**
  * Loads all intents with defensive deduplication by ID.
- * Preserves exact raw text and canonical state.
+ * Tolerates corrupted, missing, or malformed fields gracefully.
  */
 export function loadIntents(): Intent[] {
   try {
@@ -20,19 +75,69 @@ export function loadIntents(): Intent[] {
     // Deduplicate strictly by ID, taking the most recently updated entry
     const map = new Map<string, Intent>();
     for (const item of parsed) {
-      if (!item || typeof item !== 'object' || !item.id) continue;
-      const sanitized: Intent = {
-        ...item,
-        originalIntent: sanitizeIntentionText(item.originalIntent || ''),
-      };
-      const existing = map.get(item.id);
-      if (!existing || new Date(sanitized.updatedAt || 0).getTime() > new Date(existing.updatedAt || 0).getTime()) {
-        map.set(item.id, sanitized);
+      const normalized = normalizeIntent(item);
+      if (!normalized) continue;
+
+      const existing = map.get(normalized.id);
+      if (
+        !existing ||
+        new Date(normalized.updatedAt || 0).getTime() >
+          new Date(existing.updatedAt || 0).getTime()
+      ) {
+        map.set(normalized.id, normalized);
       }
     }
 
-    return Array.from(map.values()).sort(
-      (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+    const list = Array.from(map.values());
+
+    // Safe Legacy Burst Reconciliation:
+    // If multiple records share identical text AND were created within 1200ms of each other
+    // without divergent user movements, they are accidental duplicates from a historical
+    // double-click or submit race. Reconcile to a single object while strictly preserving
+    // all legitimate separate intentions created at different times.
+    const healed: Intent[] = [];
+    const skippedIds = new Set<string>();
+
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (skippedIds.has(a.id)) continue;
+
+      let primary = a;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (skippedIds.has(b.id)) continue;
+
+        const isSameText = a.originalIntent === b.originalIntent;
+        const timeDiff = Math.abs(
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+
+        const aMoves = a.history.filter((h) => h.type === 'move');
+        const bMoves = b.history.filter((h) => h.type === 'move');
+        const hasDivergentMoves =
+          aMoves.length > 0 &&
+          bMoves.length > 0 &&
+          JSON.stringify(aMoves) !== JSON.stringify(bMoves);
+
+        if (isSameText && timeDiff < 1200 && !hasDivergentMoves) {
+          skippedIds.add(b.id);
+          if (
+            b.history.length > primary.history.length ||
+            (b.history.length === primary.history.length &&
+              new Date(b.updatedAt).getTime() > new Date(primary.updatedAt).getTime())
+          ) {
+            primary = b;
+          }
+        }
+      }
+
+      healed.push(primary);
+    }
+
+    return healed.sort(
+      (a, b) =>
+        new Date(b.updatedAt || b.createdAt).getTime() -
+        new Date(a.updatedAt || a.createdAt).getTime()
     );
   } catch (err) {
     console.warn('Failed to load intents from localStorage:', err);
@@ -41,19 +146,17 @@ export function loadIntents(): Intent[] {
 }
 
 /**
- * Saves a list of intents with strict deduplication by ID.
+ * Saves a list of intents with strict deduplication by ID and defensive normalization.
  */
 export function saveIntents(intents: Intent[]): void {
   try {
     const seen = new Set<string>();
     const deduped: Intent[] = [];
     for (const item of intents) {
-      if (!item || !item.id || seen.has(item.id)) continue;
-      seen.add(item.id);
-      deduped.push({
-        ...item,
-        originalIntent: sanitizeIntentionText(item.originalIntent || ''),
-      });
+      const normalized = normalizeIntent(item);
+      if (!normalized || seen.has(normalized.id)) continue;
+      seen.add(normalized.id);
+      deduped.push(normalized);
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(deduped));
   } catch (err) {
@@ -62,6 +165,7 @@ export function saveIntents(intents: Intent[]): void {
 }
 
 export function getIntentById(id: string): Intent | undefined {
+  if (!id) return undefined;
   const intents = loadIntents();
   return intents.find((i) => i.id === id);
 }
@@ -71,27 +175,24 @@ export function getIntentById(id: string): Intent | undefined {
  * Updates in place if matching ID exists, or prepends if new.
  */
 export function persistIntent(intent: Intent): void {
-  if (!intent || !intent.id) return;
+  const normalized = normalizeIntent(intent);
+  if (!normalized) return;
 
   const current = loadIntents();
-  const index = current.findIndex((i) => i.id === intent.id);
-  const now = new Date().toISOString();
-  const sanitized: Intent = {
-    ...intent,
-    originalIntent: sanitizeIntentionText(intent.originalIntent || ''),
-    updatedAt: now,
-  };
+  const index = current.findIndex((i) => i.id === normalized.id);
+  normalized.updatedAt = new Date().toISOString();
 
   if (index >= 0) {
-    current[index] = sanitized;
+    current[index] = normalized;
   } else {
-    current.unshift(sanitized);
+    current.unshift(normalized);
   }
 
   saveIntents(current);
 }
 
 export function removeIntent(id: string): void {
+  if (!id) return;
   const intents = loadIntents().filter((i) => i.id !== id);
   saveIntents(intents);
 }
@@ -108,7 +209,7 @@ export function markVisited(): void {
   try {
     localStorage.setItem(VISITED_KEY, 'true');
   } catch {
-    // Ignore
+    // Ignore private browsing limitations
   }
 }
 
@@ -131,7 +232,7 @@ export function setSavedActiveIntentId(id: string | null): void {
       localStorage.removeItem(ACTIVE_INTENT_KEY);
     }
   } catch {
-    // Ignore
+    // Ignore private browsing limitations
   }
 }
 
@@ -151,6 +252,6 @@ export function setSavedView(view: AppView): void {
   try {
     localStorage.setItem(ACTIVE_VIEW_KEY, view);
   } catch {
-    // Ignore
+    // Ignore private browsing limitations
   }
 }

@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import React from 'react';
+import { motion } from 'motion/react';
 import { Intent } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { getCanonicalIntention } from '../utils/text';
@@ -18,8 +17,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onCreateNew,
   onShowArrival,
 }) => {
-  const [showRealized, setShowRealized] = useState(false);
-
   // Strict deduplication by ID
   const seen = new Set<string>();
   const uniqueIntents = intents.filter((i) => {
@@ -131,56 +128,36 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
             )}
 
-            {/* Realized Intentions: Quiet, settled in permanence */}
+            {/* Realized Intentions: Quiet, settled in reality */}
             {realizedIntents.length > 0 && (
-              <div className="pt-4 border-t border-white/5">
-                <button
-                  id="toggle-realized-btn"
-                  onClick={() => setShowRealized((prev) => !prev)}
-                  className="flex items-center gap-2 text-[10px] font-mono tracking-[0.25em] text-white/30 hover:text-white/60 uppercase transition cursor-pointer py-1"
-                >
-                  <span>PERMANENCE ({realizedIntents.length})</span>
-                  {showRealized ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </button>
+              <div className="pt-6 border-t border-white/5 space-y-3">
+                <div className="text-[10px] font-mono tracking-[0.25em] text-white/30 uppercase">
+                  REAL
+                </div>
+                <div className="space-y-1.5">
+                  {realizedIntents.map((item) => {
+                    const canonical = getCanonicalIntention(item.originalIntent);
 
-                <AnimatePresence>
-                  {showRealized && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.25 }}
-                      className="mt-3 space-y-2 overflow-hidden"
-                    >
-                      {realizedIntents.map((item) => {
-                        const canonical = getCanonicalIntention(item.originalIntent);
-
-                        return (
-                          <div
-                            key={item.id}
-                            id={`realized-item-${item.id}`}
-                            onClick={() => onSelectIntent(item)}
-                            className="group cursor-pointer py-2 px-2 -mx-2 rounded-lg hover:bg-white/[0.02] flex items-center justify-between gap-3 text-white/40 hover:text-white/80 transition-colors"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white/25 shrink-0" />
-                              <span className="text-sm font-light truncate">
-                                {canonical}
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-mono tracking-widest text-white/20 shrink-0">
-                              REAL
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    return (
+                      <div
+                        key={item.id}
+                        id={`realized-item-${item.id}`}
+                        onClick={() => onSelectIntent(item)}
+                        className="group cursor-pointer py-2.5 px-3 -mx-3 rounded-xl hover:bg-white/[0.03] flex items-center justify-between gap-3 text-white/40 hover:text-white/80 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white/40 shrink-0" />
+                          <span className="text-sm font-light text-white/60 group-hover:text-white truncate">
+                            {canonical}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono tracking-widest text-white/30 shrink-0">
+                          REAL
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -194,8 +171,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           onClick={onCreateNew}
           className="group flex items-center justify-center gap-2.5 w-full h-14 rounded-full border border-white/15 hover:border-white/35 bg-white/[0.03] hover:bg-white/[0.07] text-white/90 hover:text-white font-mono text-xs tracking-widest uppercase transition cursor-pointer"
         >
-          <Plus className="w-3.5 h-3.5 text-white/50 group-hover:text-white transition" />
-          <span>NEW INTENTION</span>
+          <span>EXPRESS AN INTENTION</span>
         </button>
       </div>
     </div>

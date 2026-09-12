@@ -56,3 +56,21 @@
 .animate-radiance {
   animation: real-radiance 3s ease-in-out infinite;
 }
+
+/* Accessibility: Support prefers-reduced-motion across the app */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible focus outline for keyboard navigation */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}

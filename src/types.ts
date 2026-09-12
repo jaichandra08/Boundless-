@@ -2,6 +2,7 @@ export type IntentState = 'INTENDED' | 'MOVING' | 'REAL' | 'CLOSED';
 
 export interface IntentHistoryItem {
   id: string;
+  intentId?: string;
   text: string;
   completedAt: string;
   type: 'creation' | 'state_change' | 'move';

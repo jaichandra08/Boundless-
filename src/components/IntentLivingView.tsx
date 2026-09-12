@@ -5,6 +5,7 @@ import { Intent, IntentHistoryItem } from '../types';
 import { shareIntent } from '../utils/share';
 import { OrbitalGlyph } from './OrbitalGlyph';
 import { getCanonicalIntention } from '../utils/text';
+import { generateId } from '../utils/id';
 
 interface IntentLivingViewProps {
   intent: Intent;
@@ -70,7 +71,8 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
 
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `hist_${Date.now()}`,
+      id: generateId('hist'),
+      intentId: intent.id,
       text: intent.nextMove,
       completedAt: now,
       type: 'move',
@@ -87,10 +89,22 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
   };
 
   // Transition to REAL: The intended reality actually became true
+  const handleReviseMove = () => {
+    if (!intent.nextMove) return;
+    setMoveInput(intent.nextMove);
+    const updated: Intent = {
+      ...intent,
+      nextMove: '',
+      updatedAt: new Date().toISOString(),
+    };
+    onUpdateIntent(updated);
+  };
+
   const handleMarkReal = () => {
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `hist_${Date.now()}`,
+      id: generateId('hist'),
+      intentId: intent.id,
       text: 'Reality achieved',
       completedAt: now,
       type: 'state_change',
@@ -110,7 +124,8 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
   const handleCloseIntent = () => {
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `hist_${Date.now()}`,
+      id: generateId('hist'),
+      intentId: intent.id,
       text: 'Preserved into permanence',
       completedAt: now,
       type: 'state_change',
@@ -130,7 +145,8 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
   const handleReopen = () => {
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `hist_${Date.now()}`,
+      id: generateId('hist'),
+      intentId: intent.id,
       text: 'Returned to motion',
       completedAt: now,
       type: 'state_change',
@@ -244,10 +260,21 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
                 {hasActiveMove ? (
                   /* Active move in progress: The single primary action is to complete it */
                   <div className="border-l-2 border-sky-400 pl-4 py-1 space-y-4">
-                    <div className="text-[10px] font-mono tracking-[0.25em] text-sky-400 uppercase">
-                      IN MOTION
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-mono tracking-[0.25em] text-sky-400 uppercase">
+                        IN MOTION
+                      </div>
+                      <button
+                        id="revise-move-btn"
+                        type="button"
+                        onClick={handleReviseMove}
+                        className="text-[10px] font-mono tracking-widest text-white/40 hover:text-white transition cursor-pointer"
+                        title="Edit movement"
+                      >
+                        REVISE
+                      </button>
                     </div>
-                    <div className="text-xl sm:text-2xl font-light text-white leading-relaxed">
+                    <div className="text-xl sm:text-2xl font-light text-white leading-relaxed break-words">
                       {intent.nextMove}
                     </div>
                     <button
@@ -428,16 +455,26 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
 
       {/* Bottom Primary Action Bar */}
       <div className="w-full flex flex-col gap-3 pb-safe pt-2">
-        {/* In INTENDED: "MOVE IT →" */}
+        {/* In INTENDED: "MOVE IT →" or direct "THIS IS REAL →" */}
         {intent.currentState === 'INTENDED' && (
-          <button
-            id="move-it-primary-btn"
-            onClick={handleMoveIt}
-            className="group flex items-center justify-center gap-3 w-full h-14 rounded-full bg-white text-black font-semibold text-sm tracking-widest uppercase hover:bg-white/95 active:scale-[0.98] transition shadow-[0_0_25px_rgba(255,255,255,0.16)] cursor-pointer"
-          >
-            <span>MOVE IT</span>
-            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-          </button>
+          <div className="flex flex-col gap-2.5 w-full">
+            <button
+              id="move-it-primary-btn"
+              onClick={handleMoveIt}
+              className="group flex items-center justify-center gap-3 w-full h-14 rounded-full bg-white text-black font-semibold text-sm tracking-widest uppercase hover:bg-white/95 active:scale-[0.98] transition shadow-[0_0_25px_rgba(255,255,255,0.16)] cursor-pointer"
+            >
+              <span>MOVE IT</span>
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+            </button>
+            <button
+              id="direct-real-btn"
+              onClick={handleMarkReal}
+              className="group flex items-center justify-center gap-2.5 w-full h-12 rounded-full border border-white/15 hover:border-white/35 bg-white/[0.02] hover:bg-white/[0.06] text-white/75 hover:text-white font-mono text-xs tracking-widest uppercase transition cursor-pointer"
+            >
+              <span>THIS IS REAL</span>
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </div>
         )}
 
         {/* In MOVING:

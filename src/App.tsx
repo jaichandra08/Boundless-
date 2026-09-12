@@ -12,6 +12,7 @@ import {
 } from './utils/storage';
 import { getCanonicalIntention } from './utils/text';
 import { generateId } from './utils/id';
+import { getSharedIntentionFromUrl } from './utils/share';
 import { ArrivalView } from './components/ArrivalView';
 import { CreateView } from './components/CreateView';
 import { IntentLivingView } from './components/IntentLivingView';
@@ -21,6 +22,13 @@ import { Toast } from './components/Toast';
 
 export default function App() {
   const [intents, setIntents] = useState<Intent[]>(() => loadIntents());
+  const [pendingSharedIntention, setPendingSharedIntention] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return getSharedIntentionFromUrl(window.location.search);
+    }
+    return null;
+  });
+
   const [activeIntentId, setActiveIntentId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -98,11 +106,18 @@ export default function App() {
     if (typeof window === 'undefined') return;
 
     const handlePopState = (event: PopStateEvent) => {
+      const existing = loadIntents();
       if (event.state && event.state.view) {
-        setView(event.state.view);
-        setActiveIntentId(event.state.activeIntentId || null);
+        const nextView = event.state.view as AppView;
+        const nextId = event.state.activeIntentId || null;
+        if (nextView === 'INTENT' && (!nextId || !existing.some((i) => i.id === nextId))) {
+          setView(existing.length > 0 ? 'HOME' : 'ARRIVAL');
+          setActiveIntentId(null);
+        } else {
+          setView(nextView);
+          setActiveIntentId(nextId);
+        }
       } else {
-        const existing = loadIntents();
         if (existing.length > 0) {
           setView('HOME');
           setActiveIntentId(null);
@@ -117,21 +132,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Handle URL query param for shared intention
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const sharedIntentId = params.get('intent');
-      if (sharedIntentId) {
-        const found = intents.find((i) => i.id === sharedIntentId);
-        if (found) {
-          setActiveIntentId(found.id);
-          setView('INTENT');
-        }
-      }
-    }
-  }, [intents]);
-
   const showToast = (message: string) => {
     setToastMessage(message);
     setTimeout(() => {
@@ -140,7 +140,6 @@ export default function App() {
   };
 
   const isCreatingRef = useRef(false);
-  const lastCreationRef = useRef<{ text: string; time: number } | null>(null);
 
   const handleStartFromArrival = () => {
     markVisited();
@@ -151,21 +150,12 @@ export default function App() {
     const canonical = getCanonicalIntention(intentText);
     if (!canonical) return;
 
-    // Guard against synchronous double-invocations from the same user gesture
+    // Guard against synchronous double-invocations from the same physical gesture
     if (isCreatingRef.current) return;
-
-    // Guard against accidental rapid event duplication (< 600ms) for identical text from the same interaction
-    const nowMs = Date.now();
-    if (
-      lastCreationRef.current &&
-      lastCreationRef.current.text === canonical &&
-      nowMs - lastCreationRef.current.time < 600
-    ) {
-      return;
-    }
-
     isCreatingRef.current = true;
-    lastCreationRef.current = { text: canonical, time: nowMs };
+    setTimeout(() => {
+      isCreatingRef.current = false;
+    }, 250);
 
     const now = new Date().toISOString();
     const newId = generateId('intent');
@@ -189,16 +179,26 @@ export default function App() {
     };
 
     persistIntent(newIntent);
-    setIntents((prev) => {
-      const deduped = prev.filter((i) => i.id !== newId);
-      return [newIntent, ...deduped];
-    });
+    setIntents((prev) => [newIntent, ...prev.filter((i) => i.id !== newId)]);
     markVisited();
     navigateTo('INTENT', newId);
+  };
 
-    setTimeout(() => {
-      isCreatingRef.current = false;
-    }, 120);
+  const handleAdoptSharedIntention = () => {
+    if (!pendingSharedIntention) return;
+    const text = pendingSharedIntention;
+    setPendingSharedIntention(null);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    handleCreateIntent(text);
+  };
+
+  const handleDismissSharedIntention = () => {
+    setPendingSharedIntention(null);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   };
 
   const handleUpdateIntent = (updated: Intent) => {
@@ -215,6 +215,39 @@ export default function App() {
 
       {/* Global Toast */}
       <Toast message={toastMessage} />
+
+      {/* Shared Intention Modal: Clean, explicit recipient adoption without auto-injection */}
+      {pendingSharedIntention && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+          <div className="w-full max-w-md bg-[#121318] border border-white/15 rounded-3xl p-6 sm:p-8 space-y-6 text-center select-none shadow-2xl">
+            <div className="text-[10px] font-mono tracking-[0.25em] text-white/40 uppercase">
+              SHARED INTENTION
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-light text-white leading-snug break-words">
+              {pendingSharedIntention}
+            </h2>
+            <p className="text-xs font-mono text-white/40 tracking-wide">
+              A human shared this intention with you.
+            </p>
+            <div className="space-y-3 pt-2">
+              <button
+                id="adopt-shared-intent-btn"
+                onClick={handleAdoptSharedIntention}
+                className="w-full h-14 rounded-full bg-white text-black font-semibold text-xs font-mono tracking-widest uppercase hover:bg-white/95 active:scale-[0.98] transition cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+              >
+                MAKE IT REAL
+              </button>
+              <button
+                id="dismiss-shared-intent-btn"
+                onClick={handleDismissSharedIntention}
+                className="w-full h-11 rounded-full text-xs font-mono tracking-widest text-white/40 hover:text-white transition cursor-pointer"
+              >
+                DISMISS
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* VIEW ROUTER */}
       {view === 'ARRIVAL' && (

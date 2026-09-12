@@ -48,6 +48,21 @@ export function normalizeIntent(raw: unknown): Intent | null {
   const createdAt = typeof obj.createdAt === 'string' ? obj.createdAt : now;
   const updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : createdAt;
 
+  // Strict Lifecycle Timestamp Invariants:
+  // INTENDED: no realAt, no closedAt
+  // MOVING: no realAt, no closedAt
+  // REAL: realAt exists, no closedAt
+  // CLOSED: realAt exists, closedAt exists
+  let realAt: string | undefined = undefined;
+  let closedAt: string | undefined = undefined;
+
+  if (currentState === 'REAL') {
+    realAt = typeof obj.realAt === 'string' ? obj.realAt : updatedAt;
+  } else if (currentState === 'CLOSED') {
+    realAt = typeof obj.realAt === 'string' ? obj.realAt : (typeof obj.closedAt === 'string' ? obj.closedAt : updatedAt);
+    closedAt = typeof obj.closedAt === 'string' ? obj.closedAt : now;
+  }
+
   return {
     id: obj.id.trim(),
     originalIntent: sanitizedText,
@@ -56,14 +71,16 @@ export function normalizeIntent(raw: unknown): Intent | null {
     history,
     createdAt,
     updatedAt,
-    realAt: typeof obj.realAt === 'string' ? obj.realAt : undefined,
-    closedAt: typeof obj.closedAt === 'string' ? obj.closedAt : undefined,
+    realAt,
+    closedAt,
   };
 }
 
 /**
- * Loads all intents with defensive deduplication by ID.
+ * Loads all intents with defensive deduplication strictly by ID.
  * Tolerates corrupted, missing, or malformed fields gracefully.
+ * Text is NOT identity: Distinct intentions with identical wording are
+ * completely preserved as separate unique objects.
  */
 export function loadIntents(): Intent[] {
   try {
@@ -90,51 +107,7 @@ export function loadIntents(): Intent[] {
 
     const list = Array.from(map.values());
 
-    // Safe Legacy Burst Reconciliation:
-    // If multiple records share identical text AND were created within 1200ms of each other
-    // without divergent user movements, they are accidental duplicates from a historical
-    // double-click or submit race. Reconcile to a single object while strictly preserving
-    // all legitimate separate intentions created at different times.
-    const healed: Intent[] = [];
-    const skippedIds = new Set<string>();
-
-    for (let i = 0; i < list.length; i++) {
-      const a = list[i];
-      if (skippedIds.has(a.id)) continue;
-
-      let primary = a;
-      for (let j = i + 1; j < list.length; j++) {
-        const b = list[j];
-        if (skippedIds.has(b.id)) continue;
-
-        const isSameText = a.originalIntent === b.originalIntent;
-        const timeDiff = Math.abs(
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
-
-        const aMoves = a.history.filter((h) => h.type === 'move');
-        const bMoves = b.history.filter((h) => h.type === 'move');
-        const hasDivergentMoves =
-          aMoves.length > 0 &&
-          bMoves.length > 0 &&
-          JSON.stringify(aMoves) !== JSON.stringify(bMoves);
-
-        if (isSameText && timeDiff < 1200 && !hasDivergentMoves) {
-          skippedIds.add(b.id);
-          if (
-            b.history.length > primary.history.length ||
-            (b.history.length === primary.history.length &&
-              new Date(b.updatedAt).getTime() > new Date(primary.updatedAt).getTime())
-          ) {
-            primary = b;
-          }
-        }
-      }
-
-      healed.push(primary);
-    }
-
-    return healed.sort(
+    return list.sort(
       (a, b) =>
         new Date(b.updatedAt || b.createdAt).getTime() -
         new Date(a.updatedAt || a.createdAt).getTime()

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, ArrowRight, Share2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Share2 } from 'lucide-react';
 import { Intent, IntentHistoryItem } from '../types';
 import { shareIntent } from '../utils/share';
 import { OrbitalGlyph } from './OrbitalGlyph';
@@ -21,7 +21,17 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
   onToast,
 }) => {
   const [moveInput, setMoveInput] = useState('');
+  const actionLockRef = useRef(false);
   const canonicalIntent = getCanonicalIntention(intent.originalIntent);
+
+  const lockAction = (): boolean => {
+    if (actionLockRef.current) return false;
+    actionLockRef.current = true;
+    setTimeout(() => {
+      actionLockRef.current = false;
+    }, 250);
+    return true;
+  };
 
   const handleShare = async () => {
     const result = await shareIntent(intent);
@@ -32,9 +42,12 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
 
   // Immediate physical transition: INTENDED -> MOVING
   const handleMoveIt = () => {
+    if (!lockAction() || intent.currentState !== 'INTENDED') return;
+
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `hist_${Date.now()}`,
+      id: generateId('hist'),
+      intentId: intent.id,
       text: 'Put into motion',
       completedAt: now,
       type: 'state_change',
@@ -52,7 +65,7 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
   const handleStartMove = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = moveInput.trim();
-    if (!trimmed) return;
+    if (!trimmed || intent.currentState !== 'MOVING' || !lockAction()) return;
 
     const now = new Date().toISOString();
     const updated: Intent = {
@@ -65,9 +78,9 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
   };
 
   // Complete current movement in the real world: "DONE"
-  // Records the move as an evolutionary step, NOT automatically making the intent REAL
+  // Records the move as an incremental forward step, NOT automatically making the intent REAL
   const handleCompleteMove = () => {
-    if (!intent.nextMove) return;
+    if (!intent.nextMove || intent.currentState !== 'MOVING' || !lockAction()) return;
 
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
@@ -88,9 +101,9 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
     onToast('Moved forward.');
   };
 
-  // Transition to REAL: The intended reality actually became true
+  // Revise current move in flight
   const handleReviseMove = () => {
-    if (!intent.nextMove) return;
+    if (!intent.nextMove || intent.currentState !== 'MOVING' || !lockAction()) return;
     setMoveInput(intent.nextMove);
     const updated: Intent = {
       ...intent,
@@ -100,7 +113,10 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
     onUpdateIntent(updated);
   };
 
+  // Transition to REAL: The intended reality actually became true
   const handleMarkReal = () => {
+    if (intent.currentState === 'REAL' || intent.currentState === 'CLOSED' || !lockAction()) return;
+
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
       id: generateId('hist'),
@@ -114,51 +130,35 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
       currentState: 'REAL',
       nextMove: '',
       realAt: now,
+      closedAt: undefined,
       updatedAt: now,
       history: [...intent.history, historyItem],
     };
     onUpdateIntent(updated);
   };
 
-  // Close intent: REAL -> CLOSED (permanence)
+  // Close intent: REAL -> CLOSED (semantically final)
   const handleCloseIntent = () => {
+    if (intent.currentState !== 'REAL' || !lockAction()) return;
+
     const now = new Date().toISOString();
     const historyItem: IntentHistoryItem = {
       id: generateId('hist'),
       intentId: intent.id,
-      text: 'Preserved into permanence',
+      text: 'Intention closed',
       completedAt: now,
       type: 'state_change',
     };
     const updated: Intent = {
       ...intent,
       currentState: 'CLOSED',
+      realAt: intent.realAt || now,
       closedAt: now,
       updatedAt: now,
       history: [...intent.history, historyItem],
     };
     onUpdateIntent(updated);
     onCloseView();
-  };
-
-  // Reopen intent: CLOSED -> MOVING
-  const handleReopen = () => {
-    const now = new Date().toISOString();
-    const historyItem: IntentHistoryItem = {
-      id: generateId('hist'),
-      intentId: intent.id,
-      text: 'Returned to motion',
-      completedAt: now,
-      type: 'state_change',
-    };
-    const updated: Intent = {
-      ...intent,
-      currentState: 'MOVING',
-      updatedAt: now,
-      history: [...intent.history, historyItem],
-    };
-    onUpdateIntent(updated);
-    onToast('Returned to motion.');
   };
 
   const completedMoves = intent.history.filter((h) => h.type === 'move');
@@ -318,11 +318,11 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
                 )}
               </div>
 
-              {/* Recorded Evolution Trail: Physical trajectory of reality shifting */}
+              {/* Movements: Physical trajectory of reality shifting */}
               {completedMoves.length > 0 && (
                 <div className="mt-4 pt-6 border-t border-white/10 space-y-3">
                   <div className="text-[10px] font-mono tracking-[0.2em] text-white/30 uppercase">
-                    EVOLUTION
+                    MOVEMENTS
                   </div>
                   <div className="space-y-3 max-h-40 overflow-y-auto pr-1">
                     {completedMoves.map((item, idx) => (
@@ -371,7 +371,7 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
                 You changed something.
               </p>
 
-              {/* Manifested Intention & Evolution History */}
+              {/* Manifested Intention & Movements */}
               <div className="w-full text-left p-6 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4">
                 <div className="text-[10px] font-mono tracking-[0.25em] text-white/40 uppercase">
                   THE INTENTION
@@ -383,7 +383,7 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
                 {completedMoves.length > 0 && (
                   <div className="pt-4 border-t border-white/10 space-y-2.5">
                     <div className="text-[10px] font-mono tracking-[0.25em] text-white/40 uppercase">
-                      EVOLUTION PATHWAY
+                      MOVEMENTS
                     </div>
                     <div className="space-y-2 text-xs sm:text-sm text-white/70 font-light max-h-36 overflow-y-auto">
                       {completedMoves.map((m, idx) => (
@@ -399,7 +399,7 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
             </motion.div>
           )}
 
-          {/* STATE 4: CLOSED — Quiet Artifact of Permanence */}
+          {/* STATE 4: CLOSED — Quiet Artifact of Reality */}
           {intent.currentState === 'CLOSED' && (
             <motion.div
               key="closed-state"
@@ -413,21 +413,17 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
               </div>
 
               <div className="text-[10px] font-mono tracking-[0.3em] text-white/40 uppercase mb-3">
-                REALIZED
+                REAL
               </div>
 
-              <h2 className="text-2xl sm:text-3xl font-light text-white/90 mb-3 break-words">
+              <h2 className="text-2xl sm:text-3xl font-light text-white/90 mb-6 break-words">
                 {canonicalIntent}
               </h2>
 
-              <p className="text-xs font-mono text-white/40 tracking-wider mb-6">
-                Manifested and preserved in permanence.
-              </p>
-
               {completedMoves.length > 0 && (
-                <div className="w-full text-left bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-6 space-y-3">
+                <div className="w-full text-left bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-2 space-y-3">
                   <div className="text-[10px] font-mono text-white/30 uppercase tracking-[0.2em]">
-                    RECORDED EVOLUTION
+                    MOVEMENTS
                   </div>
                   <div className="space-y-2 max-h-36 overflow-y-auto">
                     {completedMoves.map((m, idx) => (
@@ -439,15 +435,6 @@ export const IntentLivingView: React.FC<IntentLivingViewProps> = ({
                   </div>
                 </div>
               )}
-
-              <button
-                id="reopen-intent-btn"
-                onClick={handleReopen}
-                className="flex items-center gap-2 text-xs font-mono tracking-widest text-white/50 hover:text-white border border-white/10 hover:border-white/25 px-4 py-2.5 rounded-full transition cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>RETURN TO MOTION</span>
-              </button>
             </motion.div>
           )}
         </AnimatePresence>

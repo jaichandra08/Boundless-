@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Space Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #09090b;
+    color: #f4f4f6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    touch-action: manipulation;
+  }
+
+  /* Safe area insets for mobile standalone PWA */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 1rem);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 1rem);
+  }
+}
+
+/* Restrained aura pulse for moving state */
+@keyframes subtle-breathe {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.04);
+  }
+}
+
+.animate-breathe {
+  animation: subtle-breathe 4s ease-in-out infinite;
+}
+
+/* Subtle glow for real state */
+@keyframes real-radiance {
+  0%, 100% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 16px rgba(244, 244, 246, 0.25));
+  }
+  50% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 28px rgba(244, 244, 246, 0.45));
+  }
+}
+
+.animate-radiance {
+  animation: real-radiance 3s ease-in-out infinite;
+}

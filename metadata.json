@@ -1,0 +1,6 @@
+{
+  "name": "BOUNDLESS",
+  "description": "An interface for human intention. Turn intention into reality: INTENTION → MOVING → REAL.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
